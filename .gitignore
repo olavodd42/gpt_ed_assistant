@@ -1,3 +1,7 @@
 data
 experiments
 reports
+mimic4*
+physionet.org
+.venv
+.vscode

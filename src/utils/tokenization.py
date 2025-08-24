@@ -4,13 +4,14 @@ from transformers import AutoTokenizer
 
 seed()
 
-PATH = 'models'
-class Tokenizer:
-    def __init__(self, tokenizer_name: str) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    
-    def save_tokenizer(self, path : str=PATH) -> None:
-        if not os.path.isdir(PATH):
-            os.makedirs(PATH)
+PATH = "/home/olavo-dalberto/gpt_ed_assistant/experiments/models"
+def load_tokenizer(path: str, use_fast: bool = False) -> None:
+    return AutoTokenizer.from_pretrained(path, use_fast=use_fast)
 
-        self.tokenizer.save_pretrained(PATH)
+    
+def save_tokenizer(tokenizer, path : str=PATH) -> None:
+    if not os.path.isdir(PATH):
+        os.makedirs(PATH)
+
+    tokenizer.save_pretrained(PATH)
+    print(f"Tokenizer salvo em: {PATH}")

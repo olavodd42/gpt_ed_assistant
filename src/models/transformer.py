@@ -6,18 +6,31 @@ import torch.nn as nn
 from transformers import AutoModel
 from typing import Tuple
 from src.utils.tokenization import load_tokenizer
-from src.models.mlp import MLP
+
+class MLP(nn.Module):
+    def __init__(self, hidden_size: int, n: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n),
+        )
+    def forward(self, x):
+        return self.net(x)
+    
 
 class Transformer(nn.Module):
     def __init__(self, cpkt: str, baseline: bool=False):
         """
-        Inicializa o modelo transformer.
-        Parâmetros:
-            - cpkt: str
-            - path: str
-            - baseline: bool
-            """
-        super().__init__
+        Modelo base (encoder) + duas cabeças:
+        - selector_mlp: prevê 12 grupos de exames (multi-label, BCE)
+        - classifier_mlp: prevê 2 classes (CE)
+        Se baseline=True, só usa a cabeça de classificação.
+        """
+
+        super().__init__()
         self.model = AutoModel.from_pretrained(cpkt)
         self.cfg = self.model.config
         self.baseline = baseline
@@ -28,12 +41,17 @@ class Transformer(nn.Module):
 
         self.classifier_mlp = MLP(hidden_size=self.hidden_size, n=2)
 
+        if getattr(self.cfg, "pad_token_id", None) is None:
+            raise ValueError("pad_token_id ausente no config do modelo base.")
+        if getattr(self.cfg, "eos_token_id", None) is None and not baseline:
+            raise ValueError("eos_token_id ausente no config; necessário para o selector.")
+
     @torch.no_grad
     def _last_valid_index(self, input_ids: torch.LongTensor) -> torch.LongTensor:
         """
-        Retorna o índice do último elemento excluindo PADs.
+        Índice do último token NÃO-PAD por linha.
         Parâmetros:
-            - input_ids: torch.LongTensor [B, T]
+            - input_ids: torch.LongTensor [B, T] com PAD = pad_token_id
         Retorna:
             - last: torch.longTensor    [B]
             """
@@ -48,8 +66,9 @@ class Transformer(nn.Module):
         # índice do último token válido ao longo de T [B - 1]
         last = is_pad.argmax(dim=1) - 1
 
-        # Correcao para linhas sem PAD (id do último elemento válido é o último da linha) [T - 1]
-        last[no_pad] = input_ids.size(1) - 1
+        # quando não há PAD na linha, queira o último índice (T-1)
+        T = input_ids.size(1)
+        last[no_pad] = T - 1
 
         return last
     
@@ -59,9 +78,11 @@ class Transformer(nn.Module):
         Parâmetros:
             - input_ids: torch.LongTensor [B, T]
             - attention_mask: torch.LongTensor [B, T]
-        Retorna:
-            - selector_logits: torch.LongTensor     [N_actions, 12]
-            - classifier_logits: torch.LongTensor   [B, 2]
+        Se baseline=True, retorna:
+            - classifier_logits: [B,2]
+        Caso contrário, retorna:
+            - selector_logits: [N_actions, 12] (um logit por grupo de exame em cada <eos> interno)
+            - classifier_logits: [B,2] (no último token válido de cada sequência)
         """
 
         # Obtém o último estado oculto
@@ -76,28 +97,28 @@ class Transformer(nn.Module):
         # Caso contrário, apenas seleciona o próximo grupo
         if self.baseline:
             # Obtém vetor H do último token válido
-            h = last_hidden_state[torch.arrange(B), last_idx]   # [B, H]
+            last_h = last_hidden_state[torch.arange(B, device=input_ids.device), last_idx]   # [B, H]
             
             # Classifica se ocorre resultado crítico ou não
-            return self.classifier_mlp(h)   # [B, 2]
+            return self.classifier_mlp(last_h)   # [B, 2]
         
-        # Remove eos final, pois ele não deve ser utilizado como acão
+        # Seleção de ações em <eos> internos
         eos_id = self.cfg.eos_token_id
         eos_mask = (input_ids == eos_id)    # [B, T]
-        eos_mask[torch.arange(B), last_idx] = False
+        eos_mask[torch.arange(B, device=input_ids.device), last_idx] = False    # remove o <eos> final
 
         # Encontra as logits para cada um dos 12 grupos
         selector_logits = self.selector_mlp(last_hidden_state[eos_mask])    # [N_actions, 12]
         # Encontra logits para classificacão clínica
-        classifier_logits = self.classifier_mlp(last_hidden_state[torch.arange(B), last_idx])   # [B, 2]
+        classifier_logits = self.classifier_mlp(last_hidden_state[torch.arange(B, device=input_ids.device), last_idx])   # [B, 2]
 
         return selector_logits, classifier_logits   # ([N_actions, 12], [B, 2])
     
-    def train(self):
-        self.model.train()
+    # def train(self):
+    #     self.model.train()
 
-    def parameters(self):
-        return self.model.parameters()
+    # def parameters(self):
+    #     return self.model.parameters()
     
-    def __call__(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor):
-        return self.forward(input_ids, attention_mask)
+    # def __call__(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor):
+    #     return self.forward(input_ids, attention_mask)

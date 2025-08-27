@@ -1,12 +1,16 @@
 import pandas as pd
 import json
 from typing import Dict, List
+from ast import literal_eval
 from src.utils.seed import seed
 
 seed()
 
 with open('/home/olavo-dalberto/gpt_ed_assistant/data/processed/feature_map.json') as f:
-    ED_EHR_MAP = json.load(f)
+    FEATURE_MAP = json.load(f)  # ex.: {"feature1": "age", ...}
+
+ORIG2FEAT: Dict[str, str] = {orig: feat for feat, orig in FEATURE_MAP.items()}
+
 
 ED_EHR = [
     "age", "gender", 
@@ -126,7 +130,51 @@ GROUP_NAME = {
     5: "lfts", 6: "lipase", 7: "lytes", 8: "cardio",
     9: "blood gas", 10: "tox", 11: "inflammation"
 }
-TARGET_COLS = ["outcome_critical", "outcome_ed_los"]
+TARGET_COLS = ["outcome_critical", "outcome_ed_los", "lab_group_idx"]
+
+
+def _ensure_group_list(x):
+    """
+    Converte lab_groups em List[int].
+    Aceita: list, tuple, numpy array, string tipo "[0, 1, 5]".
+    Filtra ids fora de 0..11.
+    """
+    if x is None:
+        return []
+    # já é lista/tupla -> vira lista
+    if isinstance(x, (list, tuple)):
+        lst = list(x)
+    # string -> tenta literal_eval
+    elif isinstance(x, str):
+        try:
+            lst = literal_eval(x)
+        except Exception:
+            # fallback: separa por vírgula e mantém dígitos
+            lst = [int(t.strip()) for t in x.strip("[](){}").split(",") if t.strip().isdigit()]
+    else:
+        # tenta embrulhar único valor
+        try:
+            lst = list(x)
+        except Exception:
+            lst = [int(x)]
+    # garante ints e faixa válida
+    out = []
+    for v in lst:
+        try:
+            iv = int(v)
+            if 0 <= iv <= 11:
+                out.append(iv)
+        except Exception:
+            pass
+    return out
+
+
+def _val_from_original(row: pd.Series, original_name: str):
+    """Busca o valor no row usando o nome original (mapeando para featureX)."""
+    feat = ORIG2FEAT.get(original_name)
+    if feat is None or feat not in row:
+        return None
+    return row[feat]
 
 def linearize_ehr(row: pd.Series) -> str:
     """
@@ -137,13 +185,13 @@ def linearize_ehr(row: pd.Series) -> str:
         - string
     """
     parts = []
-    for col in ED_EHR:
-        if col not in row:
+    for orig in ED_EHR:
+        v = _val_from_original(row, orig)
+
+        if pd.isna(v) or v is None:
             continue
 
-        label = ED_EHR_MAP.get(col, col)
-        val = row[col]
-        parts.append(f"{label}: {val}")
+        parts.append(f"{orig}: {v}")
     
     return '; '.join(parts)
 
@@ -158,37 +206,51 @@ def linearize_group(row: pd.Series, group_idx: int) -> str:
     """
 
     cols = ED_LAB_IDX.get(group_idx, [])
-    if not cols:
-        return ""
-    pairs = []
-    for c in cols:
-        if c in row:
-            pairs.append(f"{c}: {row[c]}")
-    if not pairs:
+    vals = []
+    for orig in cols:
+        v = _val_from_original(row, orig)
+        if v is None or pd.isna(v):
+            continue
+
+        vals.append(f"{orig}: {v}")
+
+    if not vals:
         return ""
     
     gname = GROUP_NAME.get(group_idx, f"group_{group_idx}")
-    return f"{gname}: " + " | ".join(pairs)
+    return f"{gname}: " + " | ".join(vals)
 
-def build_text_example(row: pd.Series, lab_groups: List[int], eos_token: str) -> str:
+def build_text_example(row, lab_groups, eos_token: str) -> str:
     """
-    Pega uma linha tabular e transforma em texto estruturado + <eos> delimitadores."
-    Parâmetros:
-        - row: pd.Series
-        - lab_groups: List[int]
-        - eos_token: str
-    Retorna:
-        - str
+    Concatena triagem e grupos de labs com <eos> entre blocos.
+    Ex.: "Age: 67; Gender: M; ... <eos> cbc: hemoglobin: 13.2 | ... <eos> ... <eos>"
     """
-    ehr_txt = linearize_ehr(row)
-    chunks = [ehr_txt + f" {eos_token}"]
+    parts = []
 
-    for gi in lab_groups:
-        gtxt = linearize_group(row, gi)
-        if gtxt:
-            chunks.append(gtxt + f" {eos_token}")
+    # 1) bloco de triagem 
+    ehr_txt = linearize_ehr(row)          # <- STRING
+    if ehr_txt:
+        parts.append(ehr_txt)
+    parts.append(eos_token)                # <eos> depois da triagem
 
-    return " ".join(chunks).strip()
+    # g = 0  # ex: CBC
+    # print([ (c, row.get(ORIG2FEAT.get(c,''), None)) for c in ED_LAB_IDX[g] ])
+    groups = _ensure_group_list(lab_groups)
+
+    # 2) blocos de laboratório (1 por grupo presente)
+    for g in lab_groups:
+        gtxt = linearize_group(row, g)
+        if not gtxt:
+            continue
+        parts.append(gtxt)
+        parts.append(eos_token)            # <eos> separando os grupos
+
+    # 3) <eos> final (rótulo)
+    parts.append(eos_token)
+
+    return " ".join(parts)
+
+
 
 def save_to_txt(txt: str, filename: str) -> None:
     """
@@ -197,5 +259,5 @@ def save_to_txt(txt: str, filename: str) -> None:
         - txt: str
         - filename: str
     """
-    with open(f".../data/text/{filename}") as f:
+    with open(f".../data/text/{filename}", 'w') as f:
         f.write(txt)

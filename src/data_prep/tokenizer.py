@@ -129,7 +129,7 @@ GROUP_NAME = {
     9: "blood gas", 10: "tox", 11: "inflammation"
 }
 OUT_DIR = "/home/olavo-dalberto/gpt_ed_assistant/data/text"
-MAX_LEN = 512
+MAX_LEN = 256
 BASE_CPKT = "microsoft/BioGPT"
 
 
@@ -200,6 +200,7 @@ def encode_split_per_target(df: pd.DataFrame, split_name: str, eos: str, tokeniz
         encoded_df = tokenizer(
             text,
             truncation=True,
+            add_special_tokens=False,
             max_length=MAX_LEN,
             padding="max_length",
             return_attention_mask=True

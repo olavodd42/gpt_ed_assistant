@@ -3,7 +3,7 @@ seed()
 
 import torch
 import torch.nn as nn
-from transformers import AutoModel
+from transformers import AutoModel, AutoTokenizer
 from typing import Tuple
 from src.utils.tokenization import load_tokenizer
 
@@ -22,7 +22,7 @@ class MLP(nn.Module):
     
 
 class Transformer(nn.Module):
-    def __init__(self, cpkt: str, baseline: bool=False):
+    def __init__(self, cpkt: str,tokenizer: AutoTokenizer, baseline: bool=False):
         """
         Modelo base (encoder) + duas cabeças:
         - selector_mlp: prevê 12 grupos de exames (multi-label, BCE)
@@ -31,8 +31,22 @@ class Transformer(nn.Module):
         """
 
         super().__init__()
-        self.model = AutoModel.from_pretrained(cpkt)
+
+        self.model = AutoModel.from_pretrained(cpkt, torch_dtype=torch.float16, low_cpu_mem_usage=True)
+        # Congela encoder
+        self.model.requires_grad_(False)
+        # Desativa dropout do encoder
+        self.model.eval()
         self.cfg = self.model.config
+        eos_id = tokenizer.eos_token_id
+        pad_id = tokenizer.pad_token_id
+        if eos_id is None:
+            raise ValueError("Tokenizer sem eos_token_id. Garanta add_special_tokens({'eos_token':'<eos>'}).")
+        if pad_id is None:
+            pad_id = eos_id
+        self.cfg.eos_token_id = eos_id
+        self.cfg.pad_token_id = pad_id
+        self.model.resize_token_embeddings(len(tokenizer))
         self.baseline = baseline
         self.hidden_size = self.cfg.hidden_size
 
@@ -106,6 +120,11 @@ class Transformer(nn.Module):
         eos_id = self.cfg.eos_token_id
         eos_mask = (input_ids == eos_id)    # [B, T]
         eos_mask[torch.arange(B, device=input_ids.device), last_idx] = False    # remove o <eos> final
+
+        first_eos_idx = eos_mask.int().argmax(dim=1)  # [B]
+        eos_mask[torch.arange(B, device=input_ids.device), first_eos_idx] = False
+
+        print("eos per sample:", eos_mask.sum(dim=1).tolist())
 
         # Encontra as logits para cada um dos 12 grupos
         selector_logits = self.selector_mlp(last_hidden_state[eos_mask])    # [N_actions, 12]

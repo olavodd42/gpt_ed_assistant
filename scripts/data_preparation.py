@@ -27,7 +27,6 @@ tokenizer = load_tokenizer(BASE_CPKT)
 if tokenizer.eos_token is None:
     tokenizer.add_special_tokens({"eos_token": "<eos>"})
 
-
 meta_extra = {
     "ehr_cols": [
         "age", "gender", 

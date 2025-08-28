@@ -195,6 +195,9 @@ def encode_split_per_target(df: pd.DataFrame, split_name: str, eos: str, tokeniz
         # Obtém grupo de laboratório (id) e lineariza texto
         lab_groups = row["lab_group_idx"] if "lab_group_idx" in row else []
         text = build_text_example_fn(row, lab_groups=lab_groups, eos_token=eos)
+        n_eos = text.count(tokenizer.eos_token)
+        assert n_eos == 1 + len(lab_groups) + 1, (n_eos, lab_groups)
+
 
         # Tokeniza o texto
         encoded_df = tokenizer(

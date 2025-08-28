@@ -2,8 +2,6 @@ import os
 import random
 import numpy as np
 
-# TensorFlow
-import tensorflow as tf
 
 # PyTorch
 import torch
@@ -23,8 +21,6 @@ def seed(seed: int = 42):
     # NumPy
     np.random.seed(seed)
 
-    # TensorFlow
-    tf.random.set_seed(seed)
 
     # PyTorch
     torch.manual_seed(seed)

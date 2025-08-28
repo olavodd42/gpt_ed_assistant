@@ -32,7 +32,7 @@ train_loader = torch.utils.data.DataLoader(
     shuffle=True,
     num_workers=0,
     pin_memory=torch.cuda.is_available(),
-    collate_fn=collate_ed
+    collate_fn=(lambda batch: collate_ed(batch, tokenizer=tokenizer))
 )
 
 
@@ -67,10 +67,10 @@ pad_id = trainer.model.cfg.pad_token_id
 
 
 
-for epoch in range(1):
-    if torch.cuda.is_available():
-        print(f"[INFO] GPU memory before cleanup: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
-        cleanup()
-        print(f"[INFO] GPU memory after cleanup: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
-    logs = trainer.train_epoch(train_loader, alpha=1.0)
-    print(f"epoch {epoch}: {logs}")
+# for epoch in range(1):
+#     if torch.cuda.is_available():
+#         print(f"[INFO] GPU memory before cleanup: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+#         cleanup()
+#         print(f"[INFO] GPU memory after cleanup: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+#     logs = trainer.train_epoch(train_loader, alpha=1.0)
+#     print(f"epoch {epoch}: {logs}")

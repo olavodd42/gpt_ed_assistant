@@ -1,11 +1,8 @@
-from src.utils.seed import seed
-seed()
 
 import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer
 from typing import Tuple
-from src.utils.tokenization import load_tokenizer
 
 class MLP(nn.Module):
     def __init__(self, hidden_size: int, n: int):

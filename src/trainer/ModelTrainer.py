@@ -1,5 +1,3 @@
-from src.utils.seed import seed
-seed()
 
 import torch
 import torch.nn as nn

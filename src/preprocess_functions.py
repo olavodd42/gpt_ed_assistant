@@ -1,8 +1,9 @@
 import json, math, pickle
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Set, Optional
 
+from numpy.typing import NDArray
+from typing import Dict, List, Tuple, Set, Optional, Any, cast
 from scipy.sparse import csr_matrix
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
@@ -79,15 +80,15 @@ def make_feature_lists(df: pd.DataFrame,
 
     drop_outcomes: List[str] = [c for c in df.columns if c.startswith("outcome_") and c != target_col]
     # filtra apenas as que de fato existem no df
-    drop_misc = [c for c in drop_misc if c in df.columns]
+    drop_misc = [c for c in drop_misc if c in df.columns] if drop_misc is not None else []
 
 
     # texto:
     text_col_real: Optional[str] = text_col if (text_col is not None and text_col in df.columns) else None
 
     # categóricas
-    cat_cols: List[str] = [c for c in extra_cat if c in df.columns]
-    cat_cols += [c for c in optional_cat if c in df.columns]
+    cat_cols: List[str] = [c for c in extra_cat if c in df.columns] if extra_cat is not None else []
+    cat_cols += [c for c in optional_cat if c in df.columns] if optional_cat is not None else []
 
     # numéricas = todas as demais elegíveis (inclui 0/1)
     blocked: Set[str] = {target_col, *drop_outcomes, *drop_misc}
@@ -147,7 +148,7 @@ def apply_clinical_rules(df_train: pd.DataFrame,
 
     return limits
 
-def fit_num_scaler(num_df: pd.DataFrame) -> Tuple[StandardScaler, np.ndarray]:
+def fit_num_scaler(num_df: pd.DataFrame) -> Tuple[StandardScaler, NDArray[np.float32]]:
     """
     Normaliza as variáveis numéricas.
     Parâmetros:
@@ -157,10 +158,10 @@ def fit_num_scaler(num_df: pd.DataFrame) -> Tuple[StandardScaler, np.ndarray]:
         * Xtr: np.ndarray -> array normalizado. (n_amostras, n_features)
     """
     scaler: StandardScaler = StandardScaler(with_mean=True, with_std=True)
-    Xtr: np.ndarray = scaler.fit_transform(num_df.values)
+    Xtr: NDArray[np.float64] = scaler.fit_transform(num_df.values)
     return scaler, Xtr.astype("float32")
 
-def transform_num(scaler: StandardScaler, num_df: pd.DataFrame) -> np.ndarray:
+def transform_num(scaler: StandardScaler, num_df: pd.DataFrame) -> NDArray[np.float32]:
     """
     Aplica um StandardScaler já ajustado (fit) em colunas numéricas de um DataFrame.
     Parâmetros:
@@ -169,7 +170,7 @@ def transform_num(scaler: StandardScaler, num_df: pd.DataFrame) -> np.ndarray:
     Retorna:
         * np.ndarray -> array com valores normalizados (n_amostras, n_features)
     """
-    return scaler.transform(df[num_cols].values).astype("float32")
+    return scaler.transform(num_df.values).astype("float32")
 
 def fit_cat_maps(df: pd.DataFrame, cat_cols: List[str]) -> Dict[str, Dict[str,int]]:
     """
@@ -199,7 +200,7 @@ def fit_cat_maps(df: pd.DataFrame, cat_cols: List[str]) -> Dict[str, Dict[str,in
 
     return maps
 
-def apply_cat_maps(df: pd.DataFrame, cat_cols: List[str], maps: Dict[str,Dict[str,int]]) -> List[np.ndarray]:
+def apply_cat_maps(df: pd.DataFrame, cat_cols: List[str], maps: Dict[str,Dict[str,int]]) -> List[NDArray[np.int64]]:
     """
     Transforma colunas categóricas do DataFrame em arrays de inteiros
     usando os dicionários gerados por fit_cat_maps, fallback 0=UNK.
@@ -210,7 +211,7 @@ def apply_cat_maps(df: pd.DataFrame, cat_cols: List[str], maps: Dict[str,Dict[st
     Retorna:
         * arrs: List[np.ndarray] -> lista dos arrays resultantes. (n_amostras,)
     """
-    arrs: List[np.ndarray] = []
+    arrs: List[NDArray[np.int64]] = []
     for c in cat_cols:
         m: Dict[str, int] = maps[c]
         s: pd.Series = df[c].astype("object").fillna("__NA__").astype(str)
@@ -238,10 +239,10 @@ def fit_text_pipe(train_text: pd.Series, hash_n: int, svd_d: int) -> Tuple[Hashi
 
     Xc: csr_matrix = hv.transform(train_text.fillna(""))
     Xt: csr_matrix = tfidf.fit_transform(Xc)
-    Xs: np.ndarray = svd.fit_transform(Xt)
+    Xs: NDArray[np.float64] = svd.fit_transform(Xt)
     return hv, tfidf, svd
 
-def transform_text(text: pd.Series, hv: HashingVectorizer, tfidf: TfidfTransformer, svd: TruncatedSVD) -> np.ndarray:
+def transform_text(text: pd.Series, hv: HashingVectorizer, tfidf: TfidfTransformer, svd: TruncatedSVD) -> NDArray[np.float32]:
     """
     Aplica o pipeline de texto já ajustado em uma nova série de texto.
     Parâmetros:
@@ -250,7 +251,7 @@ def transform_text(text: pd.Series, hv: HashingVectorizer, tfidf: TfidfTransform
         * tfidf: TfidfTransformer -> modelo que converte a contagem em pesos.
         * svd: TruncatedSVD -> modelo que reduz a dimensionalidade.
     Retorno:
-        * Xs: np.ndarray -> o vetor denso gerado pelo pipeline. (n_amostras, 256)
+        * Xs: np.ndarray -> o vetor denso gerado pelo pipeline. (n_amostras, svd_d)
     """
     Xc: csr_matrix = hv.transform(text.fillna(""))
     Xt: csr_matrix = tfidf.transform(Xc)
@@ -273,7 +274,10 @@ def preprocess(
         optional_cat: Optional[List[str]] = ["race","arrival_transport","disposition","insurance","ethnicity"],
         drop_misc: Optional[List[str]] = None,
         imputation_method: str = "mean"
-        ):
+        ) -> Tuple[NDArray[np.float32], List[NDArray[np.int64]], Optional[NDArray[np.float32]], NDArray[np.number],
+                   NDArray[np.float32], List[NDArray[np.int64]], Optional[NDArray[np.float32]], NDArray[np.number],
+                   NDArray[np.float32], List[NDArray[np.int64]], Optional[NDArray[np.float32]], NDArray[np.number],
+                   Optional[int], Dict[str, Any]]:
     """
     Realiza pipeline completo de preprocessamento.
         1) 
@@ -291,11 +295,26 @@ def preprocess(
         * optional_cat: Optional[List[str]] -> features categóricas adicionais.
         * drop_misc: Optional[List[str]] -> features que não vão ser utilizadas no treinamento do modelo.
         * imputation_method: str -> método de imputação: "mean", "median" ou "most frequent" (esta última também pode ser passada como "mode").
+    Retorna:
+            * Xnum_tr: NDArray[np.float32] -> array contendo os valores numéricos do dataset de treino normalizados. (n_amostras, n_features)
+            * Xcat_tr: List[NDArray[np.int64]] -> lista de arrays contendo os ids das categorias para cada coluna para o dataset de treino. (n_amostras,)
+            * Xtxt_tr: Optional[NDArray[np.float32]] -> arrays resultantes da vectorização da coluna de texto para treino (se houver). (n_amostras, svd_d)
+            * y_tr: NDArray[np.number] -> array contendo valores de treino da variável alvo. (n_amostras,)
+            * Xnum_va: NDArray[np.float32] -> array contendo os valores numéricos do dataset de validação normalizados. (n_amostras, n_features)
+            * Xcat_va: List[NDArray[np.int64]] -> lista de arrays contendo os ids das categorias para cada coluna para o dataset de validação. (n_amostras,)
+            * Xtxt_va: Optional[NDArray[np.float32]] -> arrays resultantes da vectorização da coluna de texto para validação (se houver). (n_amostras, svd_d)
+            * y_va: NDArray[np.number] -> array contendo valores de validação da variável alvo. (n_amostras,)
+            * Xnum_te: NDArray[np.float32] -> array contendo os valores numéricos do dataset de teste normalizados. (n_amostras, n_features)
+            * Xcat_te: List[NDArray[np.int64]] -> lista de arrays contendo os ids das categorias para cada coluna para o dataset de teste. (n_amostras,)
+            * Xtxt_te: Optional[NDArray[np.float32]] -> arrays resultantes da vectorização da coluna de texto para teste (se houver). (n_amostras, svd_d)
+            * y_te: NDArray[np.number] -> array contendo valores de teste da variável alvo. (n_amostras,)
+            * txt_dim: Optional[int] -> dimensão do vector de texto.
+            * artifacts: Dict[str, Any]] -> dict contendo informações relevantes sobre os dados como colunas numéricas, colunas categóricas,...
     """
     # 0) Tipagem leve
-    train: pd.DataFrame = train.copy()
-    valid: pd.DataFrame = valid.copy()
-    test: pd.DataFrame = test.copy()
+    train = train.copy()
+    valid = valid.copy()
+    test = test.copy()
     for df in (train, valid, test):
         df = prepare_types(df)
 
@@ -308,10 +327,11 @@ def preprocess(
                                                                 drop_misc=drop_misc
                                                                 )
     
-    num_cols: List[str] = lists[0]
+    num_cols: list[str] = lists[0]
+    num_cols = cast(list[str], num_cols)
     cat_cols: List[str] = lists[1]
-    text_col: Optional[str] = lists[2]
-    drops = lists[3]
+    text_col = lists[2]
+    drops: List[str] = lists[3]
 
     for df in (train, valid, test):
         df.drop(columns=[c for c in drops if c in df.columns], inplace=True, errors="ignore")
@@ -323,11 +343,14 @@ def preprocess(
                                         vital_bounds=vital_bounds,
                                         log1p_cands=log1p_cands
                                         )
+    
+    assert isinstance(num_cols, list) and all(isinstance(c, str) for c in num_cols)
 
     # 3) Imputação por média do treino nas numéricas
-    train_num: pd.Series[float | int] = train[num_cols].copy()
-    valid_num: pd.Series[float | int] = valid[num_cols].copy()
-    test_num: pd.Series[float | int]  = test[num_cols].copy()
+    train_num: pd.DataFrame = train.loc[:, num_cols].copy()
+    valid_num: pd.DataFrame = valid.loc[:, num_cols].copy()
+    test_num:  pd.DataFrame = test.loc[:,  num_cols].copy()
+
 
     if imputation_method.strip().lower() == "mean":
         imp: float = train_num.mean(axis=0)
@@ -341,40 +364,56 @@ def preprocess(
     for df in (train_num, valid_num, test_num):
         df.fillna(imp, inplace=True)
 
-    # 4) Escalonamento
-    num_scaler: Tuple[StandardScaler, np.ndarray] = fit_num_scaler(train_num)
+    # 4) Escalonamento - Normalização
+    # Treinamento (fit) no dataset de treino
+    num_scaler: Tuple[StandardScaler, NDArray[np.float32]] = fit_num_scaler(train_num)
     scaler: StandardScaler = num_scaler[0]
-    Xnum_tr: np.ndarray = num_scaler[1]
 
-    Xnum_va: np.ndarray = transform_num(scaler, valid_num)
-    Xnum_te: np.ndarray = transform_num(scaler, test_num)
+    Xnum_tr: NDArray[np.float32] = num_scaler[1]
+
+    # Normalização dos datasets de validação e teste com o modelo treinado
+    Xnum_va: NDArray[np.float32] = transform_num(scaler, valid_num)
+    Xnum_te: NDArray[np.float32] = transform_num(scaler, test_num)
 
     # 5) Categóricas → ids
-    cat_maps = fit_cat_maps(train, cat_cols=cat_cols) if len(cat_cols) else {}
-    Xcat_tr = apply_cat_maps(train, cat_cols=cat_cols, maps=cat_maps) if len(cat_cols) else []
-    Xcat_va = apply_cat_maps(valid, cat_cols=cat_cols, maps=cat_maps) if len(cat_cols) else []
-    Xcat_te = apply_cat_maps(test,  cat_cols=cat_cols, maps=cat_maps)  if len(cat_cols) else []
-    cat_cards = [ (max(a) + 1) if len(a)>0 else 1 for a in Xcat_tr ]  # +1 por UNK=0
+
+    # Mapper {coluna: {categoria: id}}
+    cat_maps: Dict[str, Dict[str, int]] = fit_cat_maps(train, cat_cols=cat_cols) if len(cat_cols) else {}
+
+    # Utilização do dicionário de mapper em cada dataset
+    Xcat_tr: List[NDArray[np.int64]] = apply_cat_maps(train, cat_cols=cat_cols, maps=cat_maps) if len(cat_cols) else []
+    Xcat_va: List[NDArray[np.int64]] = apply_cat_maps(valid, cat_cols=cat_cols, maps=cat_maps) if len(cat_cols) else []
+    Xcat_te: List[NDArray[np.int64]] = apply_cat_maps(test,  cat_cols=cat_cols, maps=cat_maps)  if len(cat_cols) else []
+
+    # Lista de ids + UNK (id 0)
+    cat_cards: List[int] = [(max(a) + 1) if len(a)>0 else 1 for a in Xcat_tr ]  # +1 por UNK=0
 
     # 6) Texto
     if text_col and text_col in train.columns:
-        hv, tfidf, svd = fit_text_pipe(train[text_col], hash_n=hash_n, svd_d=svd_d)
-        Xtxt_tr = transform_text(train[text_col], hv=hv, tfidf=tfidf, svd=svd)
-        Xtxt_va = transform_text(valid[text_col], hv=hv, tfidf=tfidf, svd=svd)
-        Xtxt_te = transform_text(test[text_col],  hv=hv, tfidf=tfidf, svd=svd)
-        txt_dim = Xtxt_tr.shape[1]
+        # Treinamento de modelos de vectorização
+        models: Tuple[HashingVectorizer, TfidfTransformer, TruncatedSVD] = fit_text_pipe(train[text_col], hash_n=hash_n, svd_d=svd_d)
+        hv: Optional[HashingVectorizer] = models[0]
+        tfidf: Optional[TfidfTransformer] = models[1]
+        svd: Optional[TruncatedSVD] = models[2]
+
+        # Transformação dos textos em arrays de floats
+        Xtxt_tr: Optional[NDArray[np.float32]] = transform_text(train[text_col], hv=hv, tfidf=tfidf, svd=svd)
+        Xtxt_va: Optional[NDArray[np.float32]] = transform_text(valid[text_col], hv=hv, tfidf=tfidf, svd=svd)
+        Xtxt_te: Optional[NDArray[np.float32]] = transform_text(test[text_col],  hv=hv, tfidf=tfidf, svd=svd)
+        txt_dim: Optional[int] = Xtxt_tr.shape[1]
+    # Caso não haja text_col, então define os vetores como None
     else:
         hv=tfidf=svd=None
         Xtxt_tr = Xtxt_va = Xtxt_te = None
         txt_dim = None
 
     # 7) y e tipo
-    y_tr = train[target_col].to_numpy()
-    y_va = valid[target_col].to_numpy()
-    y_te = test[target_col].to_numpy()
+    y_tr: NDArray[np.number] = train[target_col].to_numpy()
+    y_va: NDArray[np.number] = valid[target_col].to_numpy()
+    y_te: NDArray[np.number] = test[target_col].to_numpy()
 
     # 8) Artefatos
-    artifacts = {
+    artifacts: Dict[str, Any] = {
         "num_cols": num_cols,
         "cat_cols": cat_cols,
         "text_col": text_col,

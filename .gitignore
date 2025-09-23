@@ -6,3 +6,9 @@ physionet.org
 .venv
 .vscode
 report*
+artifacts
+.git*
+.*
+download_mimic_iv.sh
+models
+configs

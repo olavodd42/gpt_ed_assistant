@@ -40,7 +40,7 @@ def prepare_types(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def lengthened_ed_stay(df: pd.DataFrame) -> pd.DataFrame:
-    df["legthened_ed_stay"] = df["ed_los_hours"] > 24.0
+    df["lengthened_ed_stay"] = df["ed_los_hours"] > 24.0
     return df
 
 def make_feature_lists(df: pd.DataFrame,
@@ -94,6 +94,9 @@ def make_feature_lists(df: pd.DataFrame,
     blocked: Set[str] = {target_col, *drop_outcomes, *drop_misc}
     if text_col_real is not None:
         blocked.add(text_col_real)
+    for c in cat_cols:
+        blocked.add(c)
+
     num_cols: List[str] = [c for c in df.columns
                 if c not in blocked and df[c].dtype != "object"]
 
@@ -102,7 +105,7 @@ def make_feature_lists(df: pd.DataFrame,
 def apply_clinical_rules(df_train: pd.DataFrame,
                          df_valid: pd.DataFrame,
                          df_test: pd.DataFrame,
-                         vital_bounds: Dict[str, Tuple[int, int]],
+                         vital_bounds: Dict[str, Tuple[float, float]],
                          log1p_cands: List[str]
                          ) -> Dict[str, Tuple[float,float]]:
     """
@@ -115,11 +118,11 @@ def apply_clinical_rules(df_train: pd.DataFrame,
         * df_train: pd.Dataframe -> dataset de treino,
         * df_valid: pd.DataFrame -> dataset de validação,
         * df_test: pd.DataFrame -> dataset de teste,
-        * vital_bounds: Dict[str, Tuple[int, int]] -> dicionário contendo valores lo e hi para clamp de cada feature,
+        * vital_bounds: Dict[str, Tuple[float, float]] -> dicionário contendo valores lo e hi para clamp de cada feature,
         * log1p_cands: List[str] -> colunas passíveis de transformação logarítmica.
 
     Retorna:
-      * limits: Dict[str, Tuple[int, int]] -> dict {col: (lo, hi)} com os limites usados no passo (3) para reprodutibilidade.
+      * limits: Dict[str, Tuple[float, float]] -> dict {col: (lo, hi)} com os limites usados no passo (3) para reprodutibilidade.
     """
     # Triagem/vitais: clamp fixo por faixa
     for col, (lo, hi) in vital_bounds.items():
@@ -131,7 +134,7 @@ def apply_clinical_rules(df_train: pd.DataFrame,
     for sbp, dbp in [("triage_sbp","triage_dbp"), ("ed_sbp_last","ed_dbp_last")]:
         if sbp in df_train.columns and dbp in df_train.columns:
             for df in (df_train, df_valid, df_test):
-                bad: pd.Series[bool] = (df[sbp].notna() & df[dbp].notna() & (df[sbp] < df[dbp]))
+                bad = (df[sbp].notna() & df[dbp].notna() & (df[sbp] < df[dbp]))
                 df.loc[bad, [sbp, dbp]] = np.nan
 
     # Cauda pesada: clamp por quantis do treino + log1p
@@ -255,7 +258,7 @@ def transform_text(text: pd.Series, hv: HashingVectorizer, tfidf: TfidfTransform
     """
     Xc: csr_matrix = hv.transform(text.fillna(""))
     Xt: csr_matrix = tfidf.transform(Xc)
-    Xs: csr_matrix = svd.transform(Xt)
+    Xs: NDArray[np.float64] = svd.transform(Xt)
     return Xs.astype("float32")
 
 # ==================== FUNÇÃO PRINCIPAL ====================
@@ -352,17 +355,18 @@ def preprocess(
     test_num:  pd.DataFrame = test.loc[:,  num_cols].copy()
 
 
-    if imputation_method.strip().lower() == "mean":
-        imp: float = train_num.mean(axis=0)
-    elif imputation_method.strip().lower() == "median":
-        imp: float = train_num.median(axis=0)
-    elif imputation_method.strip().lower() == "mode" or imputation_method.strip().replace("_", " ").lower() == "most frequent":
-        imp: float = train_num.mode().iloc[0]
+    method = imputation_method.strip().lower().replace("_", " ")
+    if method == "mean":
+        imp_values = train_num.mean(axis=0)
+    elif method == "median":
+        imp_values = train_num.median(axis=0)
+    elif method in ("mode", "most frequent"):
+        imp_values = train_num.mode().iloc[0]
     else:
-        raise ValueError("Parameter imputation_method has a unsupported value")
+        raise ValueError("imputation_method deve ser 'mean', 'median' ou 'most frequent'.")
 
-    for df in (train_num, valid_num, test_num):
-        df.fillna(imp, inplace=True)
+    for df_ in (train_num, valid_num, test_num):
+        df_.fillna(imp_values, inplace=True)
 
     # 4) Escalonamento - Normalização
     # Treinamento (fit) no dataset de treino
@@ -417,9 +421,8 @@ def preprocess(
         "num_cols": num_cols,
         "cat_cols": cat_cols,
         "text_col": text_col,
-        "num_means": imp.to_dict() if imputation_method.strip().lower() == "mean" else None,
-        "num_medians": imp.to_dict() if imputation_method.strip().lower() == "median" else None,
-        "num_means": imp.to_dict() if imputation_method.strip().lower() == "mode" or imputation_method.strip().replace("_", " ").lower() == "most frequent" else None,
+        "num_imputer_method": method,
+        "num_imputer_values": imp_values.to_dict(),
         "num_scaler": scaler,
         "cat_maps": cat_maps,
         "cat_cards": cat_cards,

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from typing import Optional, Dict, Any, List, Tuple
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import average_precision_score
 
@@ -37,7 +37,7 @@ def evaluate_auprc(
                 x_txt = x_txt.to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True).float()
 
-            with autocast(enabled=use_amp):
+            with autocast(device_type=device, enabled=use_amp):
                 logits: torch.Tensor = model(x_num, x_cat, x_txt)
                 probs: torch.Tensor = torch.sigmoid(logits)
 
@@ -93,7 +93,7 @@ def train(
     """
     model.to(device)
     if scaler is None:
-        scaler = GradScaler(enabled=use_amp)
+        scaler = GradScaler(device=device, enabled=use_amp)
 
     best_ap: float = -1.0
     best_epoch: int = -1
@@ -116,7 +116,7 @@ def train(
             # Zera gradientes
             optimizer.zero_grad(set_to_none=True)
 
-            with autocast(enabled=use_amp):
+            with autocast(device_type=device, enabled=use_amp):
                 logits: torch.Tensor = model(x_num, x_cat, x_txt)  # (B,)
                 loss: float = criterion(logits, y)         
 
@@ -148,7 +148,7 @@ def train(
         train_loss: float = train_loss_sum / max(1, train_count)
 
         # ---- validação (AUPRC) ----
-        ev = evaluate_auprc(model, val_loader, device, use_amp=use_amp)
+        ap, probs_val, y_val = evaluate_auprc(model, val_loader, device, use_amp=use_amp)
 
         # ---- scheduler ----
         if optimizer_scheduler is not None:
@@ -165,13 +165,13 @@ def train(
 
         # ---- early stopping ----
         if ap > best_ap:
-            best_ap: float = ap
-            best_epoch: int = epoch
-            waited: int = 0
+            best_ap = ap
+            best_epoch = epoch
+            waited = 0
             torch.save(model.state_dict(), save_path)
         else:
             waited += 1
-            if waited >= patience_epochs:
+            if patience_epochs is not None and waited >= patience_epochs:
                 print("Early stopping!")
                 break
 

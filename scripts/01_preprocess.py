@@ -61,13 +61,13 @@ try:
                                     vital_bounds=VITAL_BOUNDS, log1p_cands=LOG1P_CANDS,
                                     hash_n=HASH_N, svd_d=SVD_D, text_col=TEXT_COL, drop_misc=DROP_MISC)
     
-    ds_tr: EDDataset = EDDataset(Xnum=Xnum_tr, Xcat=Xcat_tr, y=y_tr, Xtxt=Xtxt_tr)
-    ds_va: EDDataset = EDDataset(Xnum=Xnum_va, Xcat=Xcat_va, y=y_va, Xtxt=Xtxt_va)
-    ds_te: EDDataset = EDDataset(Xnum=Xnum_te, Xcat=Xcat_te, y=y_te, Xtxt=Xtxt_te)
+    # ds_tr: EDDataset = EDDataset(Xnum=Xnum_tr, Xcat=Xcat_tr, y=y_tr, Xtxt=Xtxt_tr)
+    # ds_va: EDDataset = EDDataset(Xnum=Xnum_va, Xcat=Xcat_va, y=y_va, Xtxt=Xtxt_va)
+    # ds_te: EDDataset = EDDataset(Xnum=Xnum_te, Xcat=Xcat_te, y=y_te, Xtxt=Xtxt_te)
 
-    dl_tr: DataLoader = DataLoader(ds_tr, batch_size=128, shuffle=True,  num_workers=4, pin_memory=True, collate_fn=collate_fn)
-    dl_va: DataLoader = DataLoader(ds_va, batch_size=128, shuffle=False, num_workers=4, pin_memory=True, collate_fn=collate_fn)
-    dl_te: DataLoader = DataLoader(ds_te, batch_size=128, shuffle=False, num_workers=4, pin_memory=True, collate_fn=collate_fn)
+    # dl_tr: DataLoader = DataLoader(ds_tr, batch_size=128, shuffle=True,  num_workers=4, pin_memory=True, collate_fn=collate_fn)
+    # dl_va: DataLoader = DataLoader(ds_va, batch_size=128, shuffle=False, num_workers=4, pin_memory=True, collate_fn=collate_fn)
+    # dl_te: DataLoader = DataLoader(ds_te, batch_size=128, shuffle=False, num_workers=4, pin_memory=True, collate_fn=collate_fn)
 
     os.makedirs("artifacts/datasets", exist_ok=True)
 

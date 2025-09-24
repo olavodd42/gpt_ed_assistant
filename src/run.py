@@ -4,7 +4,7 @@ import torch.optim as optim
 from typing import Optional, Dict, Any, List, Tuple
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from sklearn.metrics import average_precision_score
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 def evaluate_auprc(
     model: nn.Module,
@@ -52,7 +52,12 @@ def evaluate_auprc(
         ap: float = float(average_precision_score(y_cat.numpy().astype(int), probs_cat.numpy()))
     except Exception:
         ap = float("nan")  # em casos patológicos (p.ex., classe única)
-    return ap, probs_cat, y_cat
+
+    try:
+        auc: float = float(roc_auc_score(y_cat.numpy().astype(int), probs_cat.numpy()))
+    except Exception:
+        auc = float("nan")  # em casos patológicos (p.ex., classe única)
+    return ap, auc, probs_cat, y_cat
 
 
 def train(
@@ -148,7 +153,7 @@ def train(
         train_loss: float = train_loss_sum / max(1, train_count)
 
         # ---- validação (AUPRC) ----
-        ap, probs_val, y_val = evaluate_auprc(model, val_loader, device, use_amp=use_amp)
+        ap, auc, probs_val, y_val = evaluate_auprc(model, val_loader, device, use_amp=use_amp)
 
         # ---- scheduler ----
         if optimizer_scheduler is not None:
@@ -159,13 +164,14 @@ def train(
             else:
                 optimizer_scheduler.step()
 
-        print(f"ep {epoch:02d} | train_loss={train_loss:.4f} | valid_AUPRC={ap:.4f}")
+        print(f"ep {epoch:02d} | train_loss={train_loss:.4f} | valid_auc={auc:.4f} | valid_AUPRC={ap:.4f}")
 
-        history.append({"epoch": epoch, "train_loss": train_loss, "valid_auprc": ap})
+        history.append({"epoch": epoch, "train_loss": train_loss, "valid_auc": auc, "valid_auprc": ap})
 
         # ---- early stopping ----
         if ap > best_ap:
             best_ap = ap
+            best_auc = auc
             best_epoch = epoch
             waited = 0
             torch.save(model.state_dict(), save_path)
@@ -175,4 +181,4 @@ def train(
                 print("Early stopping!")
                 break
 
-    return {"best_ap": best_ap, "best_epoch": best_epoch, "history": history}
+    return {"best_ap": best_ap, "best_auc": best_auc, "best_epoch": best_epoch, "history": history}

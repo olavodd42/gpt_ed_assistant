@@ -15,7 +15,7 @@ from src.utils import load_split_npz_parts, make_bce_with_logits_pos_weight  # <
 
 # ==================== CONFIG ====================
 DEVICE: str  = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE: int = 65536*2 if DEVICE == "cuda" else 2048   # algo plausível
+BATCH_SIZE: int = 32 if DEVICE == "cuda" else 2048   # algo plausível
 NUM_WORKERS: int = 4
 PIN_MEMORY: bool = (DEVICE == "cuda")
 

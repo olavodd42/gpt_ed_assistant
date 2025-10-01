@@ -1,0 +1,40 @@
+{
+  "os":  "Linux-6.14.0-32-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.11.9",
+  "startedAt":  "2025-09-30T20:39:47.957901Z",
+  "program":  "/mnt/dados/gpt_ed_assistant/scripts/train.py",
+  "codePath":  "scripts/train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "https://github.com/olavodd42/gpt_ed_assistant.git",
+    "commit":  "4bcfbd97e3617ddb48af620ed7451372c9c426a9"
+  },
+  "email":  "olavo.dalberto@acad.ufsm.br",
+  "root":  "/mnt/dados/gpt_ed_assistant/scripts",
+  "host":  "olavo-dalberto-Dell-G15-5515",
+  "executable":  "/mnt/dados/gpt_ed_assistant/.venv/bin/python",
+  "cpu_count":  6,
+  "cpu_count_logical":  12,
+  "gpu":  "NVIDIA GeForce RTX 3050 Laptop GPU",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "46111125504",
+      "used":  "30574997504"
+    }
+  },
+  "memory":  {
+    "total":  "16080216064"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 3050 Laptop GPU",
+      "memoryTotal":  "4294967296",
+      "cudaCores":  2048,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-95838dcd-7007-0b30-33c0-f762e0e9f09f"
+    }
+  ],
+  "cudaVersion":  "12.9",
+  "writerId":  "ipatw26k8o3lzch57pbcr698yjw3f7nm"
+}
